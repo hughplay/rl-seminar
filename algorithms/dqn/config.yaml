@@ -1,7 +1,36 @@
 computed: true
 
-name: example
-date: 2019-05-06
+name: dqn
+date: '2019-05-07'
 
-model:
-  target: Reinforcement learning
+task: CartPole-v0
+cuda: false
+render_train: false
+seed: 2019
+gamma: 0.99
+
+agent:
+  dim_state: 4
+  dim_hidden: 128
+  dim_action: 2
+  dim_value: 1
+
+optimizer:
+  type: Adam
+  args:
+    lr: 0.0001
+
+id_format: [task, name, date]
+root: ~/.train_log/rl
+tb_gather: ~/.train_log/rl/cartpole_v0
+log_interval: 10
+
+id: CartPole-v0-dqn-2019-05-07 # Auto computed
+exp_root: ~/.train_log/rl/CartPole-v0-dqn-2019-05-07 # Auto computed
+ckpt_root: ~/.train_log/rl/CartPole-v0-dqn-2019-05-07/model # Auto computed
+latest_model: ~/.train_log/rl/CartPole-v0-dqn-2019-05-07/model/latest.pth # Auto computed
+log_root: ~/.train_log/rl/CartPole-v0-dqn-2019-05-07/log # Auto computed
+tb_root: ~/.train_log/rl/CartPole-v0-dqn-2019-05-07/tb # Auto computed
+
+render_test: true
+n_test: 1

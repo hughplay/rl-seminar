@@ -40,6 +40,13 @@ def init(args):
     print('Experiment has been initialized.')
 
 
+def compute(args):
+    config = get_config(default_config_file)
+    config.auto_compute()
+    config.update()
+    print('`config.yaml` has been computed and updated.')
+
+
 def git_commit(name=None, comment='', mark='beers'):
     message = ':beers: #{}: {}'.format(name, comment)
     call('git add . && git commit -m "%s"' % message, shell=True)
@@ -68,6 +75,9 @@ def main():
         help='git commit message.')
     parser_init.add_argument(
         '--nogit', action='store_true', help='git commit message.')
+
+    parser_compute = subparsers.add_parser('compute')
+    parser_compute.set_defaults(func=compute)
 
     parser_commit = subparsers.add_parser('commit')
     parser_commit.set_defaults(func=commit)

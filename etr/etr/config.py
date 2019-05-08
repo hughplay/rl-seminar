@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 from pathlib import Path
 
 from ruamel.yaml import YAML
@@ -41,9 +42,33 @@ class Config:
         self.config['name'] = name
         self.config['date'] = datetime.strftime(datetime.now(), '%Y-%m-%d')
 
+    def get_id(self):
+        strs = []
+        for key in self.config['id_format']:
+            strs.append(self.config[key])
+        res = '-'.join(strs)
+        if len(res) == 0:
+            return hash(self.config)
+        return res
+
     def auto_compute(self):
+        self.config['id'] = self.get_id()
+
+        if 'root' not in self.config:
+            self.config['root'] = './train_log'
+        self.config['exp_root'] = os.path.join(
+            self.config['root'], self.config['id'])
+        self.config['ckpt_root'] = os.path.join(
+            self.config['exp_root'], 'model')
+        self.config['latest_model'] = os.path.join(
+            self.config['ckpt_root'], 'latest.pth')
+        self.config['log_root'] = os.path.join(self.config['exp_root'], 'log')
+        self.config['tb_root'] = os.path.join(self.config['exp_root'], 'tb')
+
         self.config['computed'] = True
-        pass
+
+    def __getitem__(self, key):
+        return self.__getattr__(key)
 
     def __getattr__(self, key):
         if key in self.config:

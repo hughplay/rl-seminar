@@ -1,6 +1,7 @@
 from datetime import datetime
 import os
 from pathlib import Path
+from subprocess import check_output
 
 from ruamel.yaml import YAML
 
@@ -51,13 +52,27 @@ class Config:
             return hash(self.config)
         return res
 
+    def get_group(self):
+        """ Group experiment. """
+        try:
+            git_root = check_output(
+               'git rev-parse --show-toplevel', shell=True).decode(
+                   'utf-8').strip()
+            rel_dir = os.path.relpath('.', git_root)
+            group = os.path.dirname(rel_dir)
+        except Exception:
+            print('Warning: Not a git repository.')
+            group = ''
+        return group
+
     def auto_compute(self):
         self.config['id'] = self.get_id()
 
         if 'root' not in self.config:
             self.config['root'] = './train_log'
+        self.config['group'] = self.get_group()
         self.config['exp_root'] = os.path.join(
-            self.config['root'], self.config['id'])
+            self.config['root'], self.config['group'], self.config['id'])
         self.config['ckpt_root'] = os.path.join(
             self.config['exp_root'], 'model')
         self.config['latest_model'] = os.path.join(

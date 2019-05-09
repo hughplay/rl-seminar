@@ -59,9 +59,29 @@ def commit(args):
     mark = args.icon if args.icon else 'beers'
     git_commit(name, comment=comment, mark=mark)
 
+def green(s):
+    GREEN = '\033[92m'
+    END = '\033[0m'
+    return '{}{}{}'.format(GREEN, s, END)
+
+def print_help(parser):
+    subparsers_actions = [
+        action for action in parser._actions 
+        if isinstance(action, argparse._SubParsersAction)]
+
+    print(parser.description)
+    print('')
+    for subparsers_action in subparsers_actions:
+        for choice, subparser in subparsers_action.choices.items():
+            print("{}:".format(green(choice)))
+            print(subparser.format_help())
+
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description='Experiment Tool for Reinforcement learning.', add_help=False)
+    parser.add_argument(
+        '-h', '--help', action='store_true', help='Print help information')
     subparsers = parser.add_subparsers()
 
     parser_new = subparsers.add_parser('new')
@@ -87,4 +107,11 @@ def main():
         '-i', '--icon', default=None, help='gitmoji')
 
     args = parser.parse_args()
-    args.func(args)
+    if args.help:
+        print_help(parser)
+    else:
+        try:
+            args.func(args)
+        except Exception as e:
+            print('Error:', str(e))
+            print_help(parser)

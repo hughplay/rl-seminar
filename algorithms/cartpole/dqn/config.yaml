@@ -4,10 +4,18 @@ name: dqn
 date: '2019-05-07'
 
 task: CartPole-v0
+num_action: 2
+min_episode: 3000
+# https://github.com/openai/gym/blob/master/gym/envs/classic_control/cartpole.py#L48
+eval_episode: 100
+average_reward_threshold: 195.
+
+gamma: 0.99
+epsilon: 0.1
+
+seed: 2019
 cuda: false
 render_train: false
-seed: 2019
-gamma: 0.99
 
 agent:
   dim_state: 4
@@ -18,7 +26,7 @@ agent:
 optimizer:
   type: Adam
   args:
-    lr: 0.0001
+    lr: 0.001
 
 id_format: [task, name, date]
 root: ~/.train_log/rl

@@ -2,7 +2,9 @@ import argparse
 from etr import get_config, get_logger
 from pathlib import Path
 import torch
+from torch import nn
 from torch import optim
+from torch.distributions.categorical import Categorical
 
 from model import Agent
 from env import Game
@@ -14,7 +16,9 @@ def get_optimizer(params, opt_config):
 
 
 def get_game(config, device):
-    game = Game(config.task, config.seed, config.gamma, device)
+    game = Game(
+        config.task, config.seed, config.gamma,
+        config.eval_episode, config.average_reward_threshold, device)
     return game
 
 
@@ -24,6 +28,9 @@ class Trainer:
         self.config = config
         self.agent = Agent(**self.config.agent)
         self.logger = get_logger(__name__)
+
+        self.gamma = float(self.config.gamma)
+        self.epsilon = float(self.config.epsilon)
 
         self.init_device()
         self.init_env()
@@ -41,18 +48,24 @@ class Trainer:
     def init_env(self):
         self.game = get_game(self.config, self.device)
 
+        num_action = self.config.num_action
+        distribution = [
+            self.epsilon / num_action] * num_action + [1 - self.epsilon]
+        self.epsilon_sampler = Categorical(torch.tensor(distribution).float())
+
     def init_agent(self):
         torch.manual_seed(self.config.seed)
         self.agent = Agent(**self.config.agent).to(self.device)
         self.optimizer = get_optimizer(
             self.agent.parameters(), self.config.optimizer)
+        self.loss = nn.MSELoss()
 
     def logging(self, force=False):
-        if force or self.game.plays % self.config.log_interval == 0:
+        if force or self.game.episode % self.config.log_interval == 0:
             self.logger.info(
-                '{: >4}, score: {:6.2f} average score: {:6.2f}'.format(
-                    self.game.plays, self.game.latest_score,
-                    self.game.average_score))
+                '{: >4}, score: {:6.2f} average score: {:6.2f} solved: {}'.format(
+                    self.game.episode , self.game.latest_score,
+                    self.game.average_score, self.game.solved))
 
     def load(self):
         ckpt_path = Path(self.config.latest_model).expanduser()
@@ -80,25 +93,69 @@ class Trainer:
             'Checkpoint saved in `{}`.'.format(ckpt_path))
         self.logging(True)
 
+    def epsilon_greedy(self, values):
+        choice = self.epsilon_sampler.sample()
+        if choice < self.config.num_action:
+            action_idx = choice
+        else:
+            action_idx = torch.argmax(values)
+        action = torch.zeros(self.config.num_action)
+        action[action_idx] = 1.
+        return action
+
+    def get_data(self, state):
+        num_action = self.config.num_action
+        num_state = 1 if len(state.shape) == 1 else state.shape[0]
+        if len(state.shape) == 1:
+            state = state.unsqueeze_(0)
+        state = torch.cat([state] * num_action)
+        action = torch.cat(
+            [torch.eye(num_action)] * num_state).to(self.device)
+        return state, action
+
     def update_agent(self):
-        pass
+        self.optimizer.zero_grad()
+
+        s_before = self.game.record.s_before
+        action = self.game.record.action
+        s_after = self.game.record.s_after
+        reward = self.game.record.reward
+        survive = self.game.record.survive
+        steps = s_before.shape[0]
+
+        value = self.agent(s_before, action)
+
+        s_after, actions = self.get_data(s_after)
+        values = self.agent(s_after, actions)
+        values = torch.cat(values.split(steps), dim=1)
+        max_values = values.max(dim=1, keepdim=True)
+        y = reward + survive * self.gamma * max_values[0]
+
+        output = self.loss(y, value)
+
+        output.backward()
+        self.optimizer.step()
 
     def start(self):
         try:
             self.agent.train()
 
             self.logger.info('Start training.')
-            while not self.game.solved:
+            while (
+                    self.game.episode < self.config.min_episode or
+                    not self.game.solved):
                 self.game.reset()
                 while not self.game.over:
-                    action, log_prob, value = self.agent(
-                        self.game.state_tensor)
-                    self.game.step(action, log_prob, value)
+                    states, actions = self.get_data(self.game.state_tensor)
+                    values = self.agent(states, actions)
+                    action = self.epsilon_greedy(values)
+                    self.game.step(action)
                     if self.config.render_train:
                         self.game.render()
                 self.update_agent()
                 self.logging()
-            self.logger.info('{} has been solved!'.format(self.game.name))
+            if self.game.solved:
+                self.logger.info('{} has been solved!'.format(self.game.name))
             self.logger.info('Training complete.')
         except KeyboardInterrupt:
             self.logger.warning('Keyboard Interrupt.')

@@ -1,48 +1,22 @@
 import argparse
 from etr import get_config, get_logger
+import numpy as np
 from pathlib import Path
 import torch
 from torch import optim
 
 from model import Agent
 from env import Game
-from train import get_game
+from train import Trainer
 
 
-class Tester:
-
-    def __init__(self, config):
-        self.config = config
-        self.agent = Agent(**self.config.agent)
-        self.logger = get_logger(__name__)
-
-        self.init_device()
-        self.init_env()
-        self.init_agent()
-
-    def init_device(self):
-
-        if self.config.cuda and torch.cuda.is_available():
-            self.device = torch.device('cuda')
-            self.logger.info('Using gpu.')
-        else:
-            self.device = torch.device('cpu')
-            self.logger.info('Using cpu.')
-
-    def init_env(self):
-        self.game = get_game(self.config, self.device)
+class Tester(Trainer):
 
     def init_agent(self):
         self.agent = Agent(**self.config.agent).to(self.device)
-        self._load()
+        self.load()
 
-    def logging(self):
-        self.logger.info(
-            '{: >4}, score: {:6.2f} average score: {:6.2f}'.format(
-                self.game.plays, self.game.latest_score,
-                self.game.average_score))
-
-    def _load(self):
+    def load(self):
         ckpt_path = Path(self.config.latest_model).expanduser()
         if ckpt_path.exists():
             self.logger.info(
@@ -53,6 +27,18 @@ class Tester:
         else:
             raise FileNotFoundError('Checkpoint not found.')
 
+    def logging(self):
+        self.logger.info(
+            '{: >3}, score: {:6.2f} average score: {:6.2f}'.format(
+                self.game.episode, self.game.latest_score,
+                self.game.average_score))
+
+    def greedy(self, values):
+        action_idx = torch.argmax(values)
+        action = torch.zeros(self.config.num_action)
+        action[action_idx] = 1.
+        return action
+
     def start(self):
         try:
             self.agent.eval()
@@ -61,9 +47,10 @@ class Tester:
             for i in range(self.config.n_test):
                 self.game.reset()
                 while not self.game.over:
-                    action, log_prob, value = self.agent(
-                        self.game.state_tensor)
-                    self.game.step(action, log_prob, value)
+                    states, actions = self.get_data(self.game.state_tensor)
+                    values = self.agent(states, actions)
+                    action = self.epsilon_greedy(values)
+                    self.game.step(action)
                     if self.config.render_test:
                         self.game.render()
                 self.logging()
@@ -71,6 +58,9 @@ class Tester:
         except KeyboardInterrupt:
             self.logger.warning('Keyboard Interrupt.')
         finally:
+            self.logger.info('Total survived episodes: {}/{}'.format(
+                np.sum(np.array(self.game.cache_score) >= 200),
+                self.config.n_test))
             self.logger.info('Done.')
 
 

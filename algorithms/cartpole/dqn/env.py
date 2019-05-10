@@ -10,42 +10,24 @@ class PlayRecord:
         self.gamma = gamma
         self.reset()
         self.device = device
-        self.vars = [
-            'x', 'action', 'log_prob', 'value', 'y',
-            'reward', 'discount_reward', 'survive']
 
     def reset(self):
         self.steps = 0
         self.score = 0
-        self.list_x = []
+        self.list_s_before = []
         self.list_action = []
-        self.list_log_prob = []
-        self.list_value = []
-        self.list_y = []
         self.list_reward = []
-        self.list_discount_reward = []
+        self.list_s_after = []
         self.list_survive = []
 
-    def step(self, x, action, log_prob, value, y, reward, survive):
+    def step(self, s_before, action, reward, s_after, survive):
         self.steps += 1
         self.score += reward
-        self.list_x.append(x)
-        self.list_action.append(action)
-        self.list_log_prob.append(log_prob)
-        self.list_value.append(value)
-        self.list_y.append(y)
+        self.list_s_before.append(s_before)
+        self.list_action.append(action.unsqueeze_(0))
         self.list_reward.append(reward)
+        self.list_s_after.append(s_after)
         self.list_survive.append(survive)
-
-    def done(self):
-        self._compute_discount_reward()
-
-    def _compute_discount_reward(self):
-        R = 0
-        self.list_discount_reward = []
-        for reward in self.list_reward[::-1]:
-            R =  reward + self.gamma * R
-            self.list_discount_reward.append(R)
 
     def __len__(self):
         return self.steps
@@ -56,8 +38,9 @@ class PlayRecord:
         return tensor.float().to(self.device)
 
     def __getattr__(self, key):
-        if key in self.vars:
-            var = getattr(self, 'list_{}'.format(key))
+        list_key = 'list_{}'.format(key)
+        if hasattr(self, list_key):
+            var = getattr(self, list_key)
             var = torch.cat(
                 var) if torch.is_tensor(var[0]) else torch.tensor(var)
             return self._transform(var)
@@ -70,6 +53,7 @@ class Game:
 
     def __init__(
             self, name='CartPole-v0', seed=2019, gamma=0.99,
+            eval_episode=100, average_reward_threshold=195.,
             device=torch.device('cpu')):
         self.name = name
         self.seed = seed
@@ -89,9 +73,8 @@ class Game:
         self.str_state = None
         self.text_state = None
 
-        # https://github.com/openai/gym/blob/master/gym/envs/classic_control/cartpole.py#L48
-        self.min_play = 100
-        self.average_reward_threshold = 195.
+        self.eval_episode = eval_episode
+        self.average_reward_threshold = average_reward_threshold
 
     def reset(self):
         self.done = False
@@ -99,16 +82,15 @@ class Game:
         self.state = self.env.reset()
         return self.state
 
-    def step(self, action, log_prob=0., value=0.):
-        state, reward, self.done, _ = self.env.step(action.item())
+    def step(self, action):
+        action_idx = torch.argmax(action).item()
+        state, reward, self.done, _ = self.env.step(action_idx)
         survive = 1. if self.env.steps_beyond_done is None else 0
-        self.record.step(
-            self.state, action, log_prob, value, state, reward, survive)
+        self.record.step(self.state, action, reward, state, survive)
 
         self.state = state
         if self.over:
             self.cache_score.append(self.record.score)
-            self.record.done()
 
     def render(self):
         if self.jupyter:
@@ -135,13 +117,13 @@ class Game:
 
     @property
     def solved(self):
-        if self.plays >= self.min_play:
+        if self.episode >= self.eval_episode:
             if self.average_score >= self.average_reward_threshold:
                 return True
         return False
 
     @property
-    def plays(self):
+    def episode(self):
         return len(self.cache_score)
 
     @property
@@ -150,7 +132,7 @@ class Game:
 
     @property
     def average_score(self):
-        return np.mean(self.cache_score[-self.min_play:])
+        return np.mean(self.cache_score[-self.eval_episode:])
 
     @property
     def state_tensor(self):

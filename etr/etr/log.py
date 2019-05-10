@@ -45,6 +45,29 @@ class EscapeCoder:
     underline = '4'
 
     @classmethod
+    def format(
+            cls, text, foreground=None, background=None,
+            bold=False, italic=False, underline=False):
+        codes = []
+        if foreground:
+            codes.append(cls.foreground[foreground])
+        if background:
+            codes.append(cls.background[background])
+        if bold:
+            codes.append(cls.bold)
+        if italic:
+            codes.append(cls.italic)
+        if underline:
+            codes.append(cls.underline)
+        codes_concat = ';'.join(codes)
+        if codes_concat:
+            fmt = '\x1b[%sm{}\x1b[0m' % (codes_concat)
+        else:
+            fmt = '{}'
+
+        return fmt.format(message)
+
+    @classmethod
     def get_formatter(
             cls, foreground=None, background=None,
             bold=False, italic=False, underline=False):
